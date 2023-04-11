@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using TMPro;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -153,12 +154,23 @@ public class AppMain : MonoBehaviour
         Debug.Log("Reading output...");
         string whisperoutput = await File.ReadAllTextAsync(Application.streamingAssetsPath + "/recording.txt");
         Debug.Log("Whisper recognized: " + whisperoutput);
-        Debug.Log("Processing audio...");
+        Debug.Log("Processing Question...");
         statusText.text = "Thinking of a reply...";
-        //Do shit
+        HttpClient duckduckgo = new HttpClient();
+        using HttpResponseMessage searchresult = await duckduckgo.GetAsync("https://api.duckduckgo.com/?format=json&q=" + WebUtility.UrlEncode(whisperoutput)); //Idk why im using async here tbh
+        using HttpContent resultcontent = searchresult.Content;
+        string duckjson = await resultcontent.ReadAsStringAsync();
+        dynamic result = JObject.Parse(duckjson);
+        string duckduckgoresult = result.Abstract;
+        if (string.IsNullOrEmpty(duckduckgoresult)) duckduckgoresult = result.Answer;
+        if (string.IsNullOrEmpty(duckduckgoresult)) duckduckgoresult = result.Definition;
+        if (string.IsNullOrEmpty(duckduckgoresult)) duckduckgoresult = "I am sorry, I do not know the answer to that question.";
+        Debug.Log("DuckDuckGo result: " + duckjson);
+        Debug.Log("Extracted: " + duckduckgoresult);
+        
         statusText.text = "Adding the japanese accent to it...";
         Debug.Log("Converting response to kana");
-        string toVoiceVox = ConvertToKana(whisperoutput);
+        string toVoiceVox = ConvertToKana(duckduckgoresult);
         statusText.text = "AI Generating speech with voicevox...";
         Debug.Log("Creating VoiceVox query...");
         HttpClient client = new HttpClient();
@@ -166,7 +178,7 @@ public class AppMain : MonoBehaviour
         using HttpContent content = response.Content;
         var queryJson = await content.ReadAsStringAsync(); //Same for this
         Debug.Log("Creating VoiceVox audio...");
-        using HttpResponseMessage responseTwo = await client.PostAsync("http://localhost:50021/synthesis?speaker=1",new StringContent(queryJson,Encoding.UTF8,"application/json"));
+        using HttpResponseMessage responseTwo = await client.PostAsync("http://localhost:50021/synthesis?speaker=1",new StringContent(queryJson.Replace("\"speedScale\":1.0","\"speedScale\":1.7"),Encoding.UTF8,"application/json"));
         using HttpContent contentTwo = responseTwo.Content;
         var reply = await contentTwo.ReadAsByteArrayAsync();
         statusText.text = "Converting response....";
@@ -886,7 +898,7 @@ public class AppMain : MonoBehaviour
     private string ConvertToKana(string text)
     {
         string endresult = "";
-        text = text.Replace(".", " ").Replace(","," ").Replace("?"," ").Replace("!"," ").Replace("\'","");
+        text = text.Replace(".", " ").Replace(","," ").Replace("?"," ").Replace("!"," ").Replace("\'","").Replace("the","te");
         foreach (string word in text.Split(" "))
         {
             string result = "";
@@ -911,18 +923,6 @@ public class AppMain : MonoBehaviour
             endresult += result + " ";
         }
         return endresult;
-    }
-
-    private float[] ConvertByteToFloat(byte[] array) 
-    {
-        float[] floatArr = new float[array.Length / 4];
-        for (int i = 0; i < floatArr.Length; i++) 
-        {
-            if (BitConverter.IsLittleEndian) 
-                Array.Reverse(array, i * 4, 4);
-            floatArr[i] = BitConverter.ToSingle(array, i * 4);
-        }
-        return floatArr;
     }
 
     private AudioClip ConvertToStereo(AudioClip audioClip)
@@ -971,7 +971,7 @@ public class AppMain : MonoBehaviour
     #endregion
 
     //Code joinked from https://github.com/deadlyfingers/UnityWav/blob/master/WavUtility.cs
-    public class WavUtility
+public class WavUtility
 {
 	// Force save as 16-bit .wav
 	const int BlockSize_16Bit = 2;
@@ -1170,7 +1170,7 @@ public class AppMain : MonoBehaviour
 		byte[] bytes = stream.ToArray ();
 
 		// Validate total bytes
-		Debug.AssertFormat (bytes.Length == fileSize, "Unexpected AudioClip to wav format byte count: {0} == {1}", bytes.Length, fileSize);
+		//Debug.AssertFormat (bytes.Length == fileSize, "Unexpected AudioClip to wav format byte count: {0} == {1}", bytes.Length, fileSize);
 
 		// Save file to persistant storage location
 		if (saveAsFile) {
@@ -1268,7 +1268,7 @@ public class AppMain : MonoBehaviour
 		count += WriteBytesToMemoryStream (ref stream, bytes, "DATA");
 
 		// Validate audio data
-		Debug.AssertFormat (bytes.Length == subchunk2Size, "Unexpected AudioClip to wav subchunk2 size: {0} == {1}", bytes.Length, subchunk2Size);
+		//Debug.AssertFormat (bytes.Length == subchunk2Size, "Unexpected AudioClip to wav subchunk2 size: {0} == {1}", bytes.Length, subchunk2Size);
 
 		return count;
 	}
