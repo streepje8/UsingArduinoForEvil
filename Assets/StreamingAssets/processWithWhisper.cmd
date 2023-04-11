@@ -1,0 +1,1 @@
+python3 -m whisper ./recording.wav --model small --device cuda
