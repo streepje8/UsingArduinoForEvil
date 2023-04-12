@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Ports;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -15,6 +16,9 @@ using Debug = UnityEngine.Debug;
 
 public class AppMain : MonoBehaviour
 {
+	[Header("Arduino Shit")] public string comPort = "COM3";
+	
+	[Header("AI SHIT")]
     public AudioClip lastClip;
     public string micName;
     public List<string> micNames = new List<string>();
@@ -32,6 +36,8 @@ public class AppMain : MonoBehaviour
 	    }
     }
 
+    private SerialPort arduino;
+
     void Start()
     {
         micNames = Microphone.devices.ToList();
@@ -43,6 +49,32 @@ public class AppMain : MonoBehaviour
                 Debug.LogException(t.Exception);
             }
         });
+
+        arduino = new SerialPort();
+        arduino.PortName = comPort;
+        arduino.BaudRate = 9600;
+        arduino.Open();
+    }
+
+    private void OnApplicationQuit()
+    {
+	    arduino.Close();
+    }
+
+    public enum Emote
+    {
+	    Ready = 0,
+	    Listening = 1,
+	    Thinking = 2,
+	    ThinkingHarder = 3,
+	    Speaking = 4
+    }
+    
+    public void SetEmote(Emote e, string message = "")
+    {
+	    Debug.Log("Setting emote to: " + ((int)e));
+	    if(e == Emote.Speaking) arduino.WriteLine(((int)e) + "\n" + message.Replace("\n","").Substring(0,Mathf.Min(message.Length,100)));
+	    else arduino.WriteLine(((int)e).ToString());
     }
 
     public async Task Boot()
@@ -82,6 +114,7 @@ public class AppMain : MonoBehaviour
             throw new Exception("Could not find whisper. Please make sure python3 is installed and run the batch file in the streaming assets folder.");
         
         statusText.text = "Ready!";
+        SetEmote(Emote.Ready);
         isInitalized = true;
         Debug.Log("AInime Assistant booted successfully!");
         
@@ -98,12 +131,21 @@ public class AppMain : MonoBehaviour
         */
     }
 
+    private string arduinoLine = "";
+    
     private void Update()
     {
+	    if (arduino.BytesToRead > 0) arduinoLine += arduino.ReadExisting();
+	    if (arduinoLine.Contains("\n"))
+	    {
+		    Debug.Log("[Arduino] " + arduinoLine);
+		    arduinoLine = String.Empty;
+	    }
         if (isInitalized && !voiceIsPlaying)
         {
             if (Input.GetKeyDown(KeyCode.Space))
             {
+	            SetEmote(Emote.Listening);
 	            statusText.text = "Listening...";
                 lastClip = Microphone.Start(micName, false, 20, 44100);
             }
@@ -123,6 +165,7 @@ public class AppMain : MonoBehaviour
         {
 	        if (!source.isPlaying)
 	        {
+		        SetEmote(Emote.Ready);
 		        statusText.text = "Ready!";
 		        voiceIsPlaying = false;
 	        }
@@ -131,6 +174,7 @@ public class AppMain : MonoBehaviour
 
     private async Task ProcessInput(AudioClip audioClip)
     {
+	    SetEmote(Emote.Thinking);
 	    byte[] input = WavUtility.FromAudioClip(ConvertToStereo(audioClip));
         File.WriteAllBytes(Application.streamingAssetsPath + "/recording.wav",input);
         Debug.Log("Recording saved to " + Application.streamingAssetsPath + "/recording.wav");
@@ -155,6 +199,7 @@ public class AppMain : MonoBehaviour
         string whisperoutput = await File.ReadAllTextAsync(Application.streamingAssetsPath + "/recording.txt");
         Debug.Log("Whisper recognized: " + whisperoutput);
         Debug.Log("Processing Question...");
+        SetEmote(Emote.ThinkingHarder);
         statusText.text = "Thinking of a reply...";
         HttpClient duckduckgo = new HttpClient();
         using HttpResponseMessage searchresult = await duckduckgo.GetAsync("https://api.duckduckgo.com/?format=json&q=" + WebUtility.UrlEncode(whisperoutput)); //Idk why im using async here tbh
@@ -187,6 +232,7 @@ public class AppMain : MonoBehaviour
         Debug.Log("Playing audio...");
         AIAudioSource.PlayOneShot(WavUtility.ToAudioClip(reply));
         statusText.text = "Speaking....";
+        SetEmote(Emote.Speaking,duckduckgoresult);
         voiceIsPlaying = true;
     }
 

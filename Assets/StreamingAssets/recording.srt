@@ -1,4 +1,4 @@
 1
-00:00:00,000 --> 00:00:02,000
-Who was Adolf Hitler?
+00:00:00,000 --> 00:00:02,320
+What is the capital of Brazil?
 
